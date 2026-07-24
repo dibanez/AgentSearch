@@ -1,0 +1,21 @@
+services:
+  agente-compras:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5}
+      # Protege el panel con contraseña (recomendado si es accesible desde internet)
+      - WEB_PASSWORD=${WEB_PASSWORD:-}
+      # Notificaciones por Telegram (opcional)
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      # Límite de gasto: llamadas a la API al día (0 = sin límite)
+      - MAX_EJECUCIONES_DIA=${MAX_EJECUCIONES_DIA:-24}
+    volumes:
+      - agente_data:/data
+    restart: unless-stopped
+
+volumes:
+  agente_data:
