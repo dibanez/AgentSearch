@@ -1,7 +1,7 @@
-"""Agente de compras: busca en internet el mejor precio y la mejor calidad
-para el producto que quieras comprar, priorizando ofertas cerca de tu ubicación.
+"""Shopping agent: searches the internet for the best price and the best quality
+for the product you want to buy, prioritising offers near your location.
 
-Usa la API de OpenAI (Responses API) con la herramienta de búsqueda web integrada.
+Uses the OpenAI API (Responses API) with the built-in web search tool.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from rich.prompt import Prompt
 
 MODEL = os.environ.get("OPENAI_MODEL", "gpt-5")
 
-INSTRUCCIONES = """\
+INSTRUCTIONS = """\
 Eres un agente experto en compras. Tu trabajo es encontrar el mejor producto \
 para el usuario buscando en internet ofertas reales y actuales.
 
@@ -26,7 +26,10 @@ Método de trabajo:
 (Milanuncios, Wallapop, coches.net, Autocasion, Amazon, Idealo, etc. según el \
 producto), concesionarios o tiendas oficiales, y comparadores de precios.
 2. Prioriza resultados cercanos a la ubicación del usuario. Si hay pocas \
-opciones cerca, amplía el radio y dilo claramente.
+opciones cerca, amplía el radio y dilo claramente. Si el usuario indica un \
+radio máximo en km, NO lo superes: descarta los anuncios que queden fuera \
+aunque tengan mejor precio. Si pide solo producto nuevo o solo de segunda \
+mano, respétalo (reacondicionado y de exposición cuentan como usados).
 3. Verifica que cada oferta cumple las especificaciones pedidas. Descarta las \
 que no cumplan y no te inventes datos: si un dato no aparece en el anuncio, \
 márcalo como "no especificado".
@@ -45,23 +48,23 @@ Si la petición del usuario es ambigua (falta presupuesto, especificaciones \
 clave, o ubicación), pregunta antes de buscar."""
 
 
-def crear_busqueda_web(ciudad: str | None, pais: str) -> dict:
+def _web_search_tool(city: str | None, country: str) -> dict:
     tool: dict = {"type": "web_search"}
-    location: dict = {"type": "approximate", "country": pais}
-    if ciudad:
-        location["city"] = ciudad
+    location: dict = {"type": "approximate", "country": country}
+    if city:
+        location["city"] = city
     tool["user_location"] = location
     return tool
 
 
-def responder(client: OpenAI, console: Console, tools: list[dict],
-              texto: str, previous_id: str | None) -> str:
-    """Envía un turno al modelo, muestra el progreso y devuelve el response.id."""
+def ask(client: OpenAI, console: Console, tools: list[dict],
+        text: str, previous_id: str | None) -> str:
+    """Send a turn to the model, show the progress and return the response.id."""
     with console.status("[bold cyan]Buscando en internet...", spinner="dots"):
         response = client.responses.create(
             model=MODEL,
-            instructions=INSTRUCCIONES,
-            input=texto,
+            instructions=INSTRUCTIONS,
+            input=text,
             tools=tools,
             previous_response_id=previous_id,
         )
@@ -88,9 +91,12 @@ def main() -> None:
         border_style="cyan",
     ))
 
-    ciudad = Prompt.ask("📍 ¿En qué ciudad estás?", default="")
-    pais = Prompt.ask("🌍 País (código de 2 letras)", default="ES").upper()
-    tools = [crear_busqueda_web(ciudad or None, pais)]
+    city = Prompt.ask("📍 ¿En qué ciudad estás?", default="")
+    radius_km = Prompt.ask("📏 Radio de búsqueda en km (vacío = sin límite)", default="")
+    condition = Prompt.ask("🏷️ Estado del producto", choices=["indiferente", "nuevo", "usado"],
+                           default="indiferente")
+    country = Prompt.ask("🌍 País (código de 2 letras)", default="ES").upper()
+    tools = [_web_search_tool(city or None, country)]
 
     console.print(
         "\nEjemplo: [dim]quiero una caravana de segunda mano para 4 personas, "
@@ -101,20 +107,28 @@ def main() -> None:
     previous_id: str | None = None
     while True:
         try:
-            texto = Prompt.ask("[bold green]Tú[/bold green]")
+            text = Prompt.ask("[bold green]Tú[/bold green]")
         except (EOFError, KeyboardInterrupt):
             break
-        if not texto.strip():
+        if not text.strip():
             continue
-        if texto.strip().lower() in {"salir", "exit", "quit"}:
+        if text.strip().lower() in {"salir", "exit", "quit"}:
             break
 
-        if previous_id is None and ciudad:
-            texto = f"(Mi ubicación: {ciudad}, {pais}) {texto}"
+        if previous_id is None:
+            context = []
+            if city:
+                context.append(f"Mi ubicación: {city}, {country}")
+            if radius_km.strip():
+                context.append(f"radio máximo: {radius_km.strip()} km")
+            if condition != "indiferente":
+                context.append(f"solo producto {condition}")
+            if context:
+                text = f"({' · '.join(context)}) {text}"
 
         try:
-            previous_id = responder(client, console, tools, texto, previous_id)
-        except Exception as exc:  # noqa: BLE001 — mostrar el error y seguir en el bucle
+            previous_id = ask(client, console, tools, text, previous_id)
+        except Exception as exc:  # noqa: BLE001 — show the error and keep looping
             console.print(f"[red]Error al consultar la API:[/red] {exc}")
 
     console.print("¡Hasta luego! 👋")

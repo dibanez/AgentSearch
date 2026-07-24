@@ -1,61 +1,64 @@
 import pytest
 
-from agente_compras import db, web
+from shopping_agent import db, web
 
 
 @pytest.fixture(autouse=True)
-def base_datos_temporal(tmp_path, monkeypatch):
-    """Cada test usa una base de datos SQLite limpia y aislada."""
+def temp_database(tmp_path, monkeypatch):
+    """Every test uses a clean, isolated SQLite database."""
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     db.init_db()
-    web._en_ejecucion.clear()
+    web._running.clear()
     yield
 
 
 @pytest.fixture(autouse=True)
-def sin_telegram(monkeypatch):
-    """Los tests nunca envían notificaciones reales."""
+def no_telegram(monkeypatch):
+    """Tests never send real notifications."""
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
 
 
 @pytest.fixture(autouse=True)
-def sin_limite_por_defecto(monkeypatch):
-    """Por defecto los tests corren sin límite diario (se activa por test)."""
-    monkeypatch.setenv("MAX_EJECUCIONES_DIA", "0")
+def no_daily_limit_by_default(monkeypatch):
+    """By default tests run with no daily limit (each test enables it)."""
+    monkeypatch.setenv("MAX_RUNS_PER_DAY", "0")
 
 
-def oferta(url: str, titulo: str, precio: float | None, chollo: bool = False) -> dict:
+def offer(url: str, title: str, price: float | None, bargain: bool = False,
+          distance: float | None = None, condition: str | None = None) -> dict:
     return {
-        "titulo": titulo,
-        "precio_eur": precio,
-        "ubicacion": "Madrid",
-        "estado": "usado",
+        "title": title,
+        "price_eur": price,
+        "location": "Madrid",
+        "distance_km": distance,
+        "condition_text": "usado",
+        "condition": condition,
         "url": url,
-        "es_chollo": chollo,
-        "motivo": "prueba",
+        "is_bargain": bargain,
+        "reason": "prueba",
     }
 
 
 @pytest.fixture
-def hacer_oferta():
-    return oferta
+def make_offer():
+    return offer
 
 
 @pytest.fixture
-def api_simulada(monkeypatch):
-    """Sustituye agent.buscar_ofertas por una cola de resultados predefinidos."""
-    from agente_compras import agent
+def fake_api(monkeypatch):
+    """Replaces agent.search_offers with a queue of predefined results."""
+    from shopping_agent import agent
 
-    resultados: list[dict] = []
+    results: list[dict] = []
 
-    def encolar(*datas: dict) -> None:
-        resultados.extend(datas)
+    def enqueue(*datas: dict) -> None:
+        results.extend(datas)
 
-    def falso_buscar(*args, **kwargs) -> dict:
-        if not resultados:
-            raise AssertionError("api_simulada: no quedan resultados encolados")
-        return resultados.pop(0)
+    def fake_search(*args, **kwargs) -> dict:
+        if not results:
+            raise AssertionError("fake_api: no queued results left")
+        return results.pop(0)
 
-    monkeypatch.setattr(agent, "buscar_ofertas", falso_buscar)
-    return encolar
+    monkeypatch.setattr(agent, "search_offers", fake_search)
+    return enqueue

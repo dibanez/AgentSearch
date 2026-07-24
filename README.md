@@ -28,24 +28,37 @@ Usa la API de OpenAI (Responses API) con búsqueda web integrada.
    | `WEB_PASSWORD` | Contraseña del panel (HTTP Basic). Ponla si el panel es accesible desde internet | recomendada |
    | `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram para avisos | — |
    | `TELEGRAM_CHAT_ID` | Chat ID donde enviar los avisos | — |
-   | `MAX_EJECUCIONES_DIA` | Límite de gasto: máximo de llamadas a la API al día entre todas las búsquedas (por defecto `24`; `0` = sin límite) | — |
+   | `MAX_RUNS_PER_DAY` | Límite de gasto: máximo de llamadas a la API al día entre todas las búsquedas (por defecto `24`; `0` = sin límite). Antes `MAX_EJECUCIONES_DIA`, que se sigue leyendo | — |
+   | `API_RETRIES` | Intentos por búsqueda ante errores transitorios de OpenAI (5xx, 429, red), con espera creciente (por defecto `3`; `1` = sin reintentos). Antes `REINTENTOS_API`, que se sigue leyendo | — |
 
-3. El servicio escucha en el puerto **8000**; configura el dominio/proxy de
-   Dokploy hacia ese puerto. La base de datos vive en el volumen `agente_data`
+3. En **Domains** de la aplicación, añade tu dominio apuntando al puerto
+   **8000** del servicio. El compose no publica puertos en el host (no hace
+   falta: Traefik llega al contenedor por la red interna, y publicarlos
+   provoca conflictos de tipo "port is already allocated" si el puerto está
+   ocupado en el servidor). La base de datos vive en el volumen `agente_data`
    (`/data`), así que las búsquedas sobreviven a los redeploys.
 
-Para probarlo en local:
+Para probarlo en local (aquí sí se publica el puerto, vía archivo adicional):
 
 ```bash
 cp .env.example .env   # y rellena OPENAI_API_KEY (docker compose lo lee solo)
-docker compose up --build
-# abre http://localhost:8000
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+# abre http://localhost:8000  (otro puerto: HOST_PORT=8080 en .env)
 ```
 
 ## Cómo funciona la vigilancia
 
 1. En el panel añades una búsqueda: *"caravana 4 plazas con baño, menos de
-   15.000€, máx. 10 años"*, tu ciudad y cada cuántas horas repetirla.
+   15.000€, máx. 10 años"*, tu ciudad, el **radio en km** (opcional), el
+   **estado** y cada cuántas horas repetirla.
+   - Con **km**: solo se guardan ofertas dentro de ese radio de tu ciudad (se
+     le exige al agente y además se filtra en el servidor). Las ofertas cuya
+     ubicación no se puede deducir se conservan marcadas "sin confirmar".
+   - Sin **km**: busca sin límite de distancia, priorizando lo más cercano.
+   - **Estado**: *indiferente* (por defecto), *solo nuevo* o *solo usado*. Con
+     uno de los dos, se descartan las ofertas del estado contrario;
+     reacondicionado y de exposición cuentan como usado, y lo que el anuncio
+     no aclara se conserva marcado "sin confirmar".
 2. El planificador la ejecuta a su intervalo (y también puedes lanzar
    "Buscar ahora"). Cada ejecución busca en portales de compraventa, tiendas y
    comparadores, y guarda las ofertas encontradas.
@@ -54,9 +67,9 @@ docker compose up --build
    - un anuncio ya conocido **baja de precio** (indicando si marca nuevo mínimo) 💶
    - el agente detecta un **posible chollo** (precio muy por debajo de mercado) 🔥
    - es la primera ejecución (te presenta la mejor oferta inicial) 🏆
-4. Cada oferta guarda su **histórico de precios** (visible en el detalle de la
-   búsqueda), y un **límite de gasto diario** (`MAX_EJECUCIONES_DIA`) frena las
-   llamadas a la API si se supera.
+4. Cada oferta guarda su **histórico de precios** y su **distancia estimada**
+   (visibles en el detalle de la búsqueda), y un **límite de gasto diario**
+   (`MAX_RUNS_PER_DAY`) frena las llamadas a la API si se supera.
 
 Para ejecutar los tests: `uv run pytest`
 
@@ -79,13 +92,13 @@ uv run comprador
 
 ```bash
 uv sync
-uv run uvicorn agente_compras.web:app --reload   # panel en http://localhost:8000
+uv run uvicorn shopping_agent.web:app --reload   # panel en http://localhost:8000
 ```
 
 Estructura:
 
 ```
-src/agente_compras/
+src/shopping_agent/
   agent.py    # búsqueda con OpenAI + web_search (salida JSON estructurada)
   db.py       # SQLite: búsquedas, ofertas, avisos
   web.py      # panel FastAPI + planificador periódico
@@ -93,6 +106,12 @@ src/agente_compras/
   main.py     # CLI interactiva
 ```
 
+El **código está en inglés** (identificadores, comentarios, docstrings y tests)
+y la **interfaz en español**: los textos del panel, los avisos y las
+instrucciones que se le envían al modelo se escriben en español, y el esquema
+SQLite conserva sus nombres originales (`busquedas`, `ofertas`, `radio_km`…)
+para no tocar la base de datos ya desplegada.
+
 La documentación de desarrollo está en [`specs/`](specs/):
 [requisitos](specs/requirements.md) · [diseño técnico](specs/design.md) ·
-[tareas](specs/tasks.md).
+[diseño de interfaz](specs/ui.md) · [tareas](specs/tasks.md).

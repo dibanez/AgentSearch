@@ -10,4 +10,4 @@ ENV DB_PATH=/data/agente.db
 VOLUME /data
 
 EXPOSE 8000
-CMD ["uvicorn", "agente_compras.web:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "shopping_agent.web:app", "--host", "0.0.0.0", "--port", "8000"]

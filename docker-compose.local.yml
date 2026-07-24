@@ -1,0 +1,8 @@
+# Solo para desarrollo local: publica el puerto en tu máquina.
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+# (No se llama docker-compose.override.yml a propósito: compose cargaría ese
+#  nombre automáticamente y Dokploy volvería a chocar con el puerto del host.)
+services:
+  agente-compras:
+    ports:
+      - "${HOST_PORT:-8000}:8000"

@@ -1,8 +1,12 @@
 services:
   agente-compras:
     build: .
-    ports:
-      - "8000:8000"
+    # No publicamos puertos en el host: el proxy de Dokploy (Traefik) llega al
+    # contenedor por la red interna. Configura el dominio en Dokploy apuntando
+    # al puerto 8000 del servicio. Para desarrollo local usa:
+    #   docker compose -f docker-compose.yml -f docker-compose.local.yml up
+    expose:
+      - "8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5}
@@ -12,7 +16,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       # Límite de gasto: llamadas a la API al día (0 = sin límite)
-      - MAX_EJECUCIONES_DIA=${MAX_EJECUCIONES_DIA:-24}
+      - MAX_RUNS_PER_DAY=${MAX_RUNS_PER_DAY:-24}
     volumes:
       - agente_data:/data
     restart: unless-stopped
